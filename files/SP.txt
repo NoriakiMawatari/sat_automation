@@ -1,0 +1,12 @@
+D_Subtotal:	31,874.45
+D_I.V.A.:	5,099.91	
+D_I.V.A. Ret.:	3,399.95
+D_I.S.R.:	3,187.46
+D_Total:	30,386.95
+
+
+V_Subtotal:	5,458.55
+V_I.V.A.:	0.00	
+V_I.V.A. Ret.:	0.00
+V_I.S.R.:	545.84
+V_Total:	4,912.71	

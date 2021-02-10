@@ -1,0 +1,8 @@
+CONCEPTOS:
+Percepciones Vida   :  $710.69
+Percepciones No Vida:  $1,055.92
+I.V.A. Acreditado   :  $168.95
+I.V.A. Retenido     :  -$112.64
+I.S.R.              :  -$176.66
+Impuesto Cedular    :  $00.00
+
