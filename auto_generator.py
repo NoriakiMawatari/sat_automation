@@ -1,7 +1,7 @@
 import logging as log
-import os
 import PyPDF2
 import re
+from collections import defaultdict
 from decouple import config
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
@@ -10,7 +10,8 @@ from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 
 
-def my_counter(matches: dict, fields: dict, values: dict) -> dict:
+def my_counter(matches: dict, fields: dict, values=defaultdict(float)) -> dict:
+    """Function to assign scanned or given values to necessary keys in bill generation processes."""
     for count, field in enumerate(fields):
         field = float(matches[fields[field]].replace(',', ''))
         keys = list(fields.keys())
@@ -18,9 +19,8 @@ def my_counter(matches: dict, fields: dict, values: dict) -> dict:
     return values
 
 
-def scan_axa_info(text: str = None) -> dict:
-    """Axa Company provides information by email, quantities are updated in .txt file from ./file folder
-    manually before running script."""
+def scan_axa_info(text: str) -> dict:
+    """Axa company provides necessary information by email, this can be edited in <./files/Axa.txt> file."""
     try:
         pattern = re.compile(r"(Vida|No Vida|Acreditado|I.S.R.|Retenido)\s*:\s*\-*\$*(\d*\,?\d*.\d*)")
         matches = dict(re.findall(pattern, text))
@@ -29,7 +29,14 @@ def scan_axa_info(text: str = None) -> dict:
     return matches
 
 
-def axa_process() -> dict:
+def axa_process() -> [dict, float]:
+    """
+    Axa's bill generation process
+
+    Scans, evaluates and displays Axa information obtained by using RegEx in order to verify correct
+    execution in automation step.
+    """
+
     axa_content = open('./files/Axa.txt').read()
     # print(f'Content:{axa_content}')
     matches = scan_axa_info(axa_content)
@@ -41,64 +48,69 @@ def axa_process() -> dict:
         'isr': 'I.S.R.',
         'iva_ret': 'Retenido'
     }
-    empty_fields = {
-        'damage': 0.00,
-        'life': 0.00,
-        'iva_tras': 0.00,
-        'isr': 0.00,
-        'iva_ret': 0.00
-    }
-    values = my_counter(matches, axa_fields, empty_fields)
-    log.info(' | Facturando para Axa Seguros | ')
-    log.info(f'Comisión de Daños: {values["damage"]}')
-    log.info(f'Comisión de Vida: {values["life"]}')
-    log.info(f'IVA Trasladado/Acreditado: {0.16 * values["damage"]}')
-    log.info(f'IVA Retenido: {values["iva_ret"]}')
-    log.info(f'ISR: {values["isr"]}')
+    values = my_counter(matches, axa_fields)
+    log.info(f"""
+    | Facturando para Axa Seguros |
+    Comisión de Daños: {values["damage"]}
+    Comisión de Vida: {values["life"]}
+    IVA Trasladado/Acreditado: {0.16 * values["damage"]}
+    IVA Retenido: {values["iva_ret"]}
+    ISR: {values["isr"]}""")
     if values['damage'] != 0:
-        log.info(f'Tasa de IVA Ret.: {round(values["iva_ret"] / values["damage"], 7)}')
-        log.info(f'Tasa de ISR Daños: {round(values["isr"] / values["damage"], 7)}')
+        log.info(f"""
+    Tasa de IVA Ret.: {round(values["iva_ret"] / values["damage"], 7)}
+    Tasa de ISR Daños: {round(values["isr"] / values["damage"], 7)}""")
     else:
-        log.info('Tasa de IVA Ret.: 0.00')
-        log.info('Tasa de IVA Ret.: 0.00')
-    log.info(f'Tasa de ISR Vida: {round(values["isr"] / values["life"], 7)}')
-    log.info(f'Subtotal: {values["damage"] + values["life"]}')
-    log.info(f'Total Impuestos Trasladados: {values["iva_tras"]}')
-    log.info(f'Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}')
-    log.info(f'Total: {values["life"] + values["damage"] + values["iva_tras"] - values["iva_ret"] - values["isr"]}')
-    return values
+        log.info('''
+        Tasa de IVA Ret.: 0.00
+        Tasa de IVA Ret.: 0.00''')
+    total = values["life"] + values["damage"] + values["iva_tras"] - values["iva_ret"] - values["isr"]
+    log.info(f'''
+    Tasa de ISR Vida: {round(values["isr"] / values["life"], 7)}
+    Subtotal: {values["damage"] + values["life"]}
+    Total Impuestos Trasladados: {values["iva_tras"]}
+    Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}
+    Total: {total}''')
+    return values, total
 
 
-def scan_qualitas_info(pdf: int, page: int = 0) -> [dict, int]:
-    """Qualitas Company provides personal .pdf files with the neccesary information.
-    In ./files folder you could find three .pdf samples to evaluate functionality, selection
+def scan_qualitas_info(pdf: int, page: int = 0) -> [dict, int, bool]:
+    """Qualitas company provides .pdf files with necessary information to make bills.
+    In <./files> folder you could find three .pdf samples to evaluate functionality and selection
     of files is meant to be user interaction."""
-    log.info(f'PDF #{pdf+1} loading...')
-    Tk().withdraw() # tkinter GUI to select files in order to be scanned
-    pdf_file_obj = open(askopenfilename(), 'rb')  # creating a pdf file object
-    pdf_reader = PyPDF2.PdfFileReader(pdf_file_obj)  # creating a pdf reader object
-    num_pages = pdf_reader.numPages
-    page_obj = pdf_reader.getPage(page)  # creating a page object
-    pattern = re.compile(r"(IMPORTE|I.V.A.|TOTAL|I.S.R.|LEY|NETAS)\s+:(\d*\,?\d*.\d*)")
-    text = page_obj.extractText()  # extracting text from page
-    # print(f'\nVisualization of PDF´s text: {text}')
-    pdf_file_obj.close()  # closing the pdf file object
-    matches = dict(re.findall(pattern, text))
-    # print(f'\nExtracted text from PDF: {matches}')
-    if matches == dict():
-        matches = {
-            'import': 0.00,
-            'iva': 0.00,
-            'total': 0.00,
-            'isr': 0.00,
-            'iva_ret': 0.00,
-            'commissions': 0.00
-        }
-    print("\nFile scanned successfully!")
-    return matches, num_pages
+    try:
+        log.info(f'PDF #{pdf+1} loading...')
+        Tk().withdraw()  # tkinter GUI to select files in order to be scanned
+        pdf_file_obj = open(askopenfilename(), 'rb')  # creating a pdf file object
+        pdf_reader = PyPDF2.PdfFileReader(pdf_file_obj)  # creating a pdf reader object
+        num_pages = pdf_reader.numPages
+        page_obj = pdf_reader.getPage(page)  # creating a page object
+        pattern = re.compile(r"(IMPORTE|I.V.A.|TOTAL|I.S.R.|LEY|NETAS)\s+:(\d*\,?\d*.\d*)")
+        text = page_obj.extractText()  # extracting text from page
+        # print(f'\nVisualization of PDF´s text: {text}')
+        pdf_file_obj.close()  # closing the pdf file object
+        matches = dict(re.findall(pattern, text))
+        # print(f'\nExtracted text from PDF: {matches}')
+        if matches == dict():
+            empty_flag = True
+            log.info('Empty page founded and ignored!')
+        else:
+            empty_flag = False
+        log.info("File scanned successfully!")
+    except Exception as err:
+        log.error(f'Error while scanning Axa.txt file: {err}')
+    return matches, num_pages, empty_flag
 
 
 def qualitas_process() -> dict:
+    """
+    Qualitas's bill generation process
+
+    According to number of pdf files, this function scans each page extracting its text and applying RegEx
+    to only use necessary information.
+    Once it is done, it is displayed in order to verify correct execution in automation step.
+    """
+
     num_pdfs = int(input("\nNumber of pdf files to scan? "))
     qualitas_fields = {
         'import': 'IMPORTE',
@@ -108,61 +120,68 @@ def qualitas_process() -> dict:
         'iva_ret': 'LEY',
         'commissions': 'NETAS'
     }
-    empty_fields = {
-        'import': 0.00,
-        'iva': 0.00,
-        'total': 0.00,
-        'isr': 0.00,
-        'iva_ret': 0.00,
-        'commissions': 0.00
-    }
     for pdf in range(num_pdfs):
-        matches, num_pages = scan_qualitas_info(pdf)
-        first_values = my_counter(matches, qualitas_fields, empty_fields)
+        matches, num_pages, empty_flag = scan_qualitas_info(pdf)
+        first_values = my_counter(matches, qualitas_fields)
         values = first_values
         if num_pages >= 2:
-            log.info(f'Loading next page in PDF: ')
-            log.info(f'Please select the file again to load next page')
-            matches, num_pages = scan_qualitas_info(pdf, 1)
-            second_values = my_counter(matches, qualitas_fields, first_values)
+            log.info(f'''
+            Loading next page in PDF: 
+            Please select the file again to load next page''')
+            matches, num_pages, empty_flag = scan_qualitas_info(pdf, 1)
+            if empty_flag:
+                break
+            second_values = my_counter(matches, qualitas_fields, values=first_values)
             values = second_values
             if num_pages >= 3:
-                log.info(f'Loading next page in PDF: ')
-                log.info(f'Please select the file again to load next page')
-                matches, num_pages = scan_qualitas_info(pdf, 2)
-                third_values = my_counter(matches, qualitas_fields, second_values)
+                log.info(f'''
+                Loading next page in PDF: 
+                Please select the file again to load next page''')
+                matches, num_pages, empty_flag = scan_qualitas_info(pdf, 2)
+                if empty_flag:
+                    break
+                third_values = my_counter(matches, qualitas_fields, values=second_values)
                 values = third_values
-    log.info(' | Facturando para Quálitas |')
-    log.info(f'Valor Unitario: {round(values["import"], 2)}')
-    log.info(f'ISR: {round(values["isr"], 2)}')
-    log.info(f'Tasa de ISR: {round(values["isr"] / values["import"], 6)}')
-    log.info(f'Ret. I.V.A. Segun Ley: {round(values["iva_ret"], 2)}')
-    log.info(f'Tasa de IVA Ret.: {round(values["iva_ret"] / values["import"], 6)}')
-    log.info(f'IVA Trasladado: {0.16 * values["import"]}')
-    log.info(f'Subtotal: {values["total"]}')
-    log.info(f'Total Impuestos Trasladados: {values["iva"]}')
-    log.info(f'Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}')
-    log.info(f'Comisión neta: {values["commissions"]}')
+    log.info(f'''
+    | Facturando para Quálitas |
+    Valor Unitario: {round(values["import"], 2)}
+    ISR: {round(values["isr"], 2)}
+    Tasa de ISR: {round(values["isr"] / values["import"], 6)}
+    Ret. I.V.A. Segun Ley: {round(values["iva_ret"], 2)}
+    Tasa de IVA Ret.: {round(values["iva_ret"] / values["import"], 6)}
+    IVA Trasladado: {0.16 * values["import"]}
+    Subtotal: {values["total"]}
+    Total Impuestos Trasladados: {values["iva"]}
+    Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}
+    Comisión neta: {values["commissions"]}''')
     return values
 
 
 def scan_potosi_info(text: str = None) -> [dict, str]:
-    """Seguros el Potosi company provides information by agents portal, quantities have to be
-    updated in .txt file from ./file folder manually before running script."""
+    """Seguros el Potosi company provides necessary information by agents portal, this can be
+    edited in <./files/SP.txt> file.
+    According to an specific group (Damage or Life) this functions assigns a different RegEx."""
     try:
         print("Available Tax Groups:\nD) Damage\nL) Life")
         tax_group = input("Tax Group to make bill?: ")
         if tax_group in ['D', 'd', 'Damage', 'damage']:
-            pattern = re.compile(r"(D_Subtotal|D_I.V.A.|D_I.V.A. Ret.|D_I.S.R.|D_Total)\s*:\s*\$*(\d*?\d*.\d*)")
+            pattern = re.compile(r"(D_Subtotal|D_I.V.A.|D_I.V.A. Ret.|D_I.S.R.|D_Total)\s*:\s*\-*\$*(\d*\,?\d*.\d*)")
         else:
-            pattern = re.compile(r"(V_Subtotal|V_I.V.A.|V_I.V.A. Ret.|V_I.S.R.|V_Total)\s*:\s*\$*(\d*?\d*.\d*)")
+            pattern = re.compile(r"(V_Subtotal|V_I.V.A.|V_I.V.A. Ret.|V_I.S.R.|V_Total)\s*:\s*\-*\$*(\d*\,?\d*.\d*)")
         matches = dict(re.findall(pattern, text))
     except Exception as err:
-        log.error(f'Error while scanning Axa.txt file: {err}')
+        log.error(f'Error while scanning SP.txt file: {err}')
     return matches, tax_group
 
 
-def potosi_process() -> [dict, str]:
+def potosi_process() -> [dict, str, float]:
+    """
+    Seguros el Potosi's bill generation process
+
+    This function scans, evaluates and displays information obtained by using RegEx in order to verify correct
+    execution in automation step.
+    """
+
     potosi_content = open("./files/SP.txt").read()
     matches, tax_group = scan_potosi_info(potosi_content)
     if tax_group in ['D', 'd', 'Damage', 'damage']:
@@ -183,33 +202,31 @@ def potosi_process() -> [dict, str]:
             'total': 'V_Total'
         }
         group = 'Vida'
-    empty_fields = {
-        'subtotal': 0.00,
-        'iva': 0.00,
-        'iva_ret': 0.00,
-        'isr': 0.00,
-        'total': 0.00
-    }
-    values = my_counter(matches, potosi_fields, empty_fields)
-    log.info('| Facturando para Seguros el Potosí |')
-    log.info(f'Comisión de {group}: {values["subtotal"]}')
-    log.info(f'IVA Trasladado/Acreditado: {values["iva"]}')
-    log.info(f'IVA Retenido: {values["iva_ret"]}')
-    log.info(f'ISR: {values["isr"]}')
+    values = my_counter(matches, potosi_fields)
+    log.info(f'''
+    | Facturando para Seguros el Potosí |
+    Comisión de {group}: {values["subtotal"]}
+    IVA Trasladado/Acreditado: {values["iva"]}
+    IVA Retenido: {values["iva_ret"]}
+    ISR: {values["isr"]}''')
     if values['subtotal'] != 0:
-        log.info(f'Tasa de IVA Ret.: {round(values["iva_ret"] / values["subtotal"], 7)}')
-        log.info(f'Tasa de ISR {group}: {round(values["isr"] / values["subtotal"], 7)}')
+        log.info(f'''
+    Tasa de IVA Ret.: {round(values["iva_ret"] / values["subtotal"], 7)}
+    Tasa de ISR {group}: {round(values["isr"] / values["subtotal"], 7)}''')
     else:
-        log.info('Tasa de IVA Ret.: 0.00')
-        log.info('Tasa de IVA Ret.: 0.00')
-    log.info(f'Subtotal: {values["subtotal"]}')
-    log.info(f'Total Impuestos Trasladados: {values["iva"]}')
-    log.info(f'Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}')
-    log.info(f'Total: {values["subtotal"] + values["iva"] - values["iva_ret"] - values["isr"]}')
-    return values, group
+        log.info('''
+    Tasa de IVA Ret.: 0.00
+    Tasa de IVA Ret.: 0.00''')
+    sp_total = values["subtotal"] + values["iva"] - values["iva_ret"] - values["isr"]
+    log.info(f'''
+    Subtotal: {values["subtotal"]}
+    Total Impuestos Trasladados: {values["iva"]}
+    Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}
+    Total: {sp_total}''')
+    return values, group, sp_total
 
 
-def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0, iva_ret=0.0):
+def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0, iva_ret=0.0, total=0.0):
     # Driver access
     gc = webdriver.Chrome('./files/chromedriver')
     gc.maximize_window()
@@ -333,28 +350,34 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
         else:
             log.error('There is no information in Life Section.')
 
-    # Time to verify quantities
-    log.info("---Please verify quantities---")
-    sleep(20)
-
-    # Finish bill
-    gc.find_element_by_xpath("//button[contains(@onclick,'sellar')]").click()
-
-    # Sign
-    gc.find_element_by_id('privateKeyPassword').send_keys(config('sat_password'))
-    btns = gc.find_elements_by_xpath("//span[@class='btn btn-default']")
-    [span.click() for span in btns]
-    sleep(10)
-    btn_confirm = gc.find_element_by_xpath("//button[@id='btnValidaOSCP']").click()
-    sleep(10)
-    log.info('Facturation done!!!!')
-    btn_sign = gc.find_element_by_xpath("//button[@id='btnFirmar']").click()
-    sleep(10)
-    download_pdf = gc.find_element_by_xpath("//span[@class='glyphicon glyphicon-file']").click()
-    gc.execute_script("scrollBy(0,-1000);")
+    # Verify total
+    log.info("---Verifying total amount---")
+    sat_total = gc.find_element_by_xpath("//input[@id='Total']").get_attribute("value")
+    upper_lim = float(sat_total) + 0.05
+    lower_lim = float(sat_total) - 0.05
     sleep(5)
-    download_xml = gc.find_element_by_xpath("//span[@class='glyphicon glyphicon-download-alt']").click()
-    sleep(10)
+    if lower_lim <= total <= upper_lim:
+        log.info('EXECUTION STATUS :: SUCCESSFUL!')
+        sleep(3)
+        # Finish bill
+        gc.find_element_by_xpath("//button[contains(@onclick,'sellar')]").click()
+        # Sign
+        gc.find_element_by_id('privateKeyPassword').send_keys(config('sat_password'))
+        btns = gc.find_elements_by_xpath("//span[@class='btn btn-default']")
+        [span.click() for span in btns]
+        sleep(10)
+        btn_confirm = gc.find_element_by_xpath("//button[@id='alidaOSCP']").click()
+        sleep(10)
+        log.info('Facturation done!!!!')
+        btn_sign = gc.find_element_by_xpath("//button[@id='btnFirmar']").click()
+        sleep(10)
+        download_pdf = gc.find_element_by_xpath("//span[@class='glyphicon glyphicon-file']").click()
+        gc.execute_script("scrollBy(0,50);")
+        sleep(5)
+        download_xml = gc.find_element_by_xpath("//span[@class='glyphicon glyphicon-download-alt']").click()
+        sleep(10)
+    else:
+        log.error('EXECUTION STATUS :: CANCELED, total amount does not correspond!!')
 
 
 if __name__ == '__main__':
@@ -366,26 +389,26 @@ if __name__ == '__main__':
         date = input('Bill Period:')
 
         if company in ['A', 'a', 'Axa', 'axa']:
-            axa_values = axa_process()
+            axa_values, axa_total = axa_process()
             # print(axa_values)
             log.info(' | Running SAT automation for Axa.txt file | ')
             automation_in_sat_webpage(company, date, damage=axa_values['damage'], life=axa_values['life'],
-                                      isr=axa_values['isr'], iva_ret=axa_values['iva_ret'])
+                                      isr=axa_values['isr'], iva_ret=axa_values['iva_ret'], total=axa_total)
         elif company in ['Q', 'q', 'Qualitas', 'qualitas']:
             qualitas_values = qualitas_process()
             # print(qualitas_values)
             log.info('| Running SAT automation for Quálitas .pdf files |')
             automation_in_sat_webpage(company, date, damage=qualitas_values['import'], isr=qualitas_values['isr'],
-                                      iva_ret=qualitas_values['iva_ret'])
+                                      iva_ret=qualitas_values['iva_ret'], total=qualitas_values["commissions"])
         elif company in ['SP', 'sp', 'seguros el potosi', 'Seguros el Potosi', 'Potosi', 'potosi']:
-            potosi_values, group = potosi_process()
+            potosi_values, group, sp_total = potosi_process()
             # print(potosi_values, group)
             log.info('| Running SAT automation for SP.txt file |')
             if group == 'Daños':
                 automation_in_sat_webpage(company, date, damage=potosi_values['subtotal'], isr=potosi_values['isr'],
-                                          iva_ret=potosi_values['iva_ret'])
+                                          iva_ret=potosi_values['iva_ret'], total=sp_total)
             else:
                 automation_in_sat_webpage(company, date, life=potosi_values['subtotal'], isr=potosi_values['isr'],
-                                          iva_ret=potosi_values['iva_ret'])
+                                          iva_ret=potosi_values['iva_ret'], total=sp_total)
     except Exception as error:
         log.error('ERROR: ', error)
