@@ -366,7 +366,7 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
         btns = gc.find_elements_by_xpath("//span[@class='btn btn-default']")
         [span.click() for span in btns]
         sleep(10)
-        btn_confirm = gc.find_element_by_xpath("//button[@id='alidaOSCP']").click()
+        btn_confirm = gc.find_element_by_xpath("//button[@id='btnValidaOSCP']").click()
         sleep(10)
         log.info('Facturation done!!!!')
         btn_sign = gc.find_element_by_xpath("//button[@id='btnFirmar']").click()
