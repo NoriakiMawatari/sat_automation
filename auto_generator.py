@@ -1,6 +1,3 @@
-import logging as log
-import PyPDF2
-import re
 from collections import defaultdict
 from decouple import config
 from selenium import webdriver
@@ -8,9 +5,13 @@ from selenium.webdriver.support.ui import Select
 from time import sleep
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
+import chromedriver_binary
+import logging as log
+import PyPDF2
+import re
 
 
-def my_counter(matches: dict, fields: dict, values=defaultdict(float)) -> dict:
+def link_matches_to_fields(matches: dict, fields: dict, values=defaultdict(float)) -> dict:
     """Function to assign scanned or given values to necessary keys in bill generation processes."""
     for count, field in enumerate(fields):
         field = float(matches[fields[field]].replace(',', ''))
@@ -48,7 +49,7 @@ def axa_process() -> [dict, float]:
         'isr': 'I.S.R.',
         'iva_ret': 'Retenido'
     }
-    values = my_counter(matches, axa_fields)
+    values = link_matches_to_fields(matches, axa_fields)
     log.info(f"""
     | Facturando para Axa Seguros |
     Comisión de Daños: {values["damage"]}
@@ -74,32 +75,30 @@ def axa_process() -> [dict, float]:
     return values, total
 
 
-def scan_qualitas_info(pdf: int, page: int = 0) -> [dict, int, bool]:
+def scan_qualitas_file(pdf: int) -> dict:
     """Qualitas company provides .pdf files with necessary information to make bills.
-    In <./files> folder you could find three .pdf samples to evaluate functionality and selection
-    of files is meant to be user interaction."""
+    Inside <./files> folder you could find three .pdf samples to evaluate functionality.
+    Files selection is meant to be user interaction."""
     try:
         log.info(f'PDF #{pdf+1} loading...')
-        Tk().withdraw()  # tkinter GUI to select files in order to be scanned
+        Tk().withdraw()
         pdf_file_obj = open(askopenfilename(), 'rb')  # creating a pdf file object
         pdf_reader = PyPDF2.PdfFileReader(pdf_file_obj)  # creating a pdf reader object
         num_pages = pdf_reader.numPages
-        page_obj = pdf_reader.getPage(page)  # creating a page object
         pattern = re.compile(r"(IMPORTE|I.V.A.|TOTAL|I.S.R.|LEY|NETAS)\s+:(\d*\,?\d*.\d*)")
-        text = page_obj.extractText()  # extracting text from page
-        # print(f'\nVisualization of PDF´s text: {text}')
+        pdf_content = {}
+        for current_page in range(num_pages):
+            page_object = pdf_reader.getPage(current_page)
+            page_text = page_object.extractText()
+            # print(f'\nVisualization of PDF´s text on page {current_page}: {page_text}')
+            page_matches = dict(re.findall(pattern, page_text))
+            # print(f'\nExtracted text from PDF: {page_matches}')
+            pdf_content[f'page_{current_page}'] = page_matches
         pdf_file_obj.close()  # closing the pdf file object
-        matches = dict(re.findall(pattern, text))
-        # print(f'\nExtracted text from PDF: {matches}')
-        if matches == dict():
-            empty_flag = True
-            log.info('Empty page founded and ignored!')
-        else:
-            empty_flag = False
         log.info("File scanned successfully!")
     except Exception as err:
-        log.error(f'Error while scanning Axa.txt file: {err}')
-    return matches, num_pages, empty_flag
+        log.error(f'Error while scanning PDF file: {err}')
+    return pdf_content
 
 
 def qualitas_process() -> dict:
@@ -120,28 +119,12 @@ def qualitas_process() -> dict:
         'iva_ret': 'LEY',
         'commissions': 'NETAS'
     }
+    values = defaultdict(float)
     for pdf in range(num_pdfs):
-        matches, num_pages, empty_flag = scan_qualitas_info(pdf)
-        first_values = my_counter(matches, qualitas_fields)
-        values = first_values
-        if num_pages >= 2:
-            log.info(f'''
-            Loading next page in PDF: 
-            Please select the file again to load next page''')
-            matches, num_pages, empty_flag = scan_qualitas_info(pdf, 1)
-            if empty_flag:
-                break
-            second_values = my_counter(matches, qualitas_fields, values=first_values)
-            values = second_values
-            if num_pages >= 3:
-                log.info(f'''
-                Loading next page in PDF: 
-                Please select the file again to load next page''')
-                matches, num_pages, empty_flag = scan_qualitas_info(pdf, 2)
-                if empty_flag:
-                    break
-                third_values = my_counter(matches, qualitas_fields, values=second_values)
-                values = third_values
+        pdf_content = scan_qualitas_file(pdf)
+        for page_matches in pdf_content:
+            if pdf_content[page_matches] != dict():
+                values = link_matches_to_fields(pdf_content[page_matches], qualitas_fields, values=values)
     log.info(f'''
     | Facturando para Quálitas |
     Valor Unitario: {round(values["import"], 2)}
@@ -202,7 +185,7 @@ def potosi_process() -> [dict, str, float]:
             'total': 'V_Total'
         }
         group = 'Vida'
-    values = my_counter(matches, potosi_fields)
+    values = link_matches_to_fields(matches, potosi_fields)
     log.info(f'''
     | Facturando para Seguros el Potosí |
     Comisión de {group}: {values["subtotal"]}
@@ -228,7 +211,7 @@ def potosi_process() -> [dict, str, float]:
 
 def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0, iva_ret=0.0, total=0.0):
     # Driver access
-    gc = webdriver.Chrome('./files/chromedriver')
+    gc = webdriver.Chrome()
     gc.maximize_window()
     gc.get('https://portalcfdi.facturaelectronica.sat.gob.mx/')
 
