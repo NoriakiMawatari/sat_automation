@@ -57,17 +57,23 @@ def axa_process() -> [dict, float]:
     IVA Trasladado/Acreditado: {0.16 * values["damage"]}
     IVA Retenido: {values["iva_ret"]}
     ISR: {values["isr"]}""")
-    if values['damage'] != 0:
+    if values['damage'] != 0.00:
         log.info(f"""
-    Tasa de IVA Ret.: {round(values["iva_ret"] / values["damage"], 7)}
-    Tasa de ISR Daños: {round(values["isr"] / values["damage"], 7)}""")
+        Tasa de IVA Ret.: {round(values["iva_ret"] / values["damage"], 7)}
+        Tasa de ISR Daños: {round(values["isr"] / values["damage"], 7)}""")
     else:
         log.info('''
         Tasa de IVA Ret.: 0.00
-        Tasa de IVA Ret.: 0.00''')
+        Tasa de ISR Daños: 0.00''')
+
     total = values["life"] + values["damage"] + values["iva_tras"] - values["iva_ret"] - values["isr"]
+    if values["life"] != 0.00:
+        tasa_isr_vida = round(values["isr"] / values["life"], 7)
+    else:
+        tasa_isr_vida = 0.00
+
     log.info(f'''
-    Tasa de ISR Vida: {round(values["isr"] / values["life"], 7)}
+    Tasa de ISR Vida: {tasa_isr_vida}
     Subtotal: {values["damage"] + values["life"]}
     Total Impuestos Trasladados: {values["iva_tras"]}
     Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}
