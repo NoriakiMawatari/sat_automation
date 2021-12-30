@@ -1,11 +1,12 @@
 from collections import defaultdict
+from typing import Union
 from decouple import config
 from selenium import webdriver
 from selenium.webdriver.support.ui import Select
 from time import sleep
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
-import chromedriver_binary
+import chromedriver_binary  # Adds chromedriver binary to path
 import logging as log
 import PyPDF2
 import re
@@ -30,7 +31,7 @@ def scan_axa_info(text: str) -> dict:
     return matches
 
 
-def axa_process() -> [dict, float]:
+def axa_process() -> Union[dict, float]:
     """
     Axa's bill generation process
 
@@ -39,9 +40,7 @@ def axa_process() -> [dict, float]:
     """
 
     axa_content = open('./files/Axa.txt').read()
-    # print(f'Content:{axa_content}')
     matches = scan_axa_info(axa_content)
-    # print(f'Matches from Axa.txt: {matches}')
     axa_fields = {
         'damage': 'No Vida',
         'life': 'Vida',
@@ -50,34 +49,19 @@ def axa_process() -> [dict, float]:
         'iva_ret': 'Retenido'
     }
     values = link_matches_to_fields(matches, axa_fields)
+    total = values["life"] + values["damage"] + values["iva_tras"] - values["iva_ret"] - values["isr"]
     log.info(f"""
     | Facturando para Axa Seguros |
     Comisión de Daños: {values["damage"]}
     Comisión de Vida: {values["life"]}
     IVA Trasladado/Acreditado: {0.16 * values["damage"]}
     IVA Retenido: {values["iva_ret"]}
-    ISR: {values["isr"]}""")
-    if values['damage'] != 0.00:
-        log.info(f"""
-        Tasa de IVA Ret.: {round(values["iva_ret"] / values["damage"], 7)}
-        Tasa de ISR Daños: {round(values["isr"] / values["damage"], 7)}""")
-    else:
-        log.info('''
-        Tasa de IVA Ret.: 0.00
-        Tasa de ISR Daños: 0.00''')
-
-    total = values["life"] + values["damage"] + values["iva_tras"] - values["iva_ret"] - values["isr"]
-    if values["life"] != 0.00:
-        tasa_isr_vida = round(values["isr"] / values["life"], 7)
-    else:
-        tasa_isr_vida = 0.00
-
-    log.info(f'''
-    Tasa de ISR Vida: {tasa_isr_vida}
+    ISR: {values["isr"]}
     Subtotal: {values["damage"] + values["life"]}
     Total Impuestos Trasladados: {values["iva_tras"]}
     Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}
-    Total: {total}''')
+    Total: {total}""")
+    
     return values, total
 
 
@@ -135,9 +119,7 @@ def qualitas_process() -> dict:
     | Facturando para Quálitas |
     Valor Unitario: {round(values["import"], 2)}
     ISR: {round(values["isr"], 2)}
-    Tasa de ISR: {round(values["isr"] / values["import"], 6)}
     Ret. I.V.A. Segun Ley: {round(values["iva_ret"], 2)}
-    Tasa de IVA Ret.: {round(values["iva_ret"] / values["import"], 6)}
     IVA Trasladado: {0.16 * values["import"]}
     Subtotal: {values["total"]}
     Total Impuestos Trasladados: {values["iva"]}
@@ -146,7 +128,7 @@ def qualitas_process() -> dict:
     return values
 
 
-def scan_potosi_info(text: str = None) -> [dict, str]:
+def scan_potosi_info(text: str = None) -> Union[dict, str]:
     """Seguros el Potosi company provides necessary information by agents portal, this can be
     edited in <./files/SP.txt> file.
     According to an specific group (Damage or Life) this functions assigns a different RegEx."""
@@ -163,7 +145,7 @@ def scan_potosi_info(text: str = None) -> [dict, str]:
     return matches, tax_group
 
 
-def potosi_process() -> [dict, str, float]:
+def potosi_process() -> Union[dict, str, float]:
     """
     Seguros el Potosi's bill generation process
 
@@ -192,26 +174,18 @@ def potosi_process() -> [dict, str, float]:
         }
         group = 'Vida'
     values = link_matches_to_fields(matches, potosi_fields)
+    sp_total = values["subtotal"] + values["iva"] - values["iva_ret"] - values["isr"]
     log.info(f'''
     | Facturando para Seguros el Potosí |
     Comisión de {group}: {values["subtotal"]}
     IVA Trasladado/Acreditado: {values["iva"]}
     IVA Retenido: {values["iva_ret"]}
-    ISR: {values["isr"]}''')
-    if values['subtotal'] != 0:
-        log.info(f'''
-    Tasa de IVA Ret.: {round(values["iva_ret"] / values["subtotal"], 7)}
-    Tasa de ISR {group}: {round(values["isr"] / values["subtotal"], 7)}''')
-    else:
-        log.info('''
-    Tasa de IVA Ret.: 0.00
-    Tasa de IVA Ret.: 0.00''')
-    sp_total = values["subtotal"] + values["iva"] - values["iva_ret"] - values["isr"]
-    log.info(f'''
+    ISR: {values["isr"]}
     Subtotal: {values["subtotal"]}
     Total Impuestos Trasladados: {values["iva"]}
     Total Impuestos Retenidos: {values["isr"] + values["iva_ret"]}
     Total: {sp_total}''')
+
     return values, group, sp_total
 
 
@@ -220,8 +194,10 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
     gc = webdriver.Chrome()
     gc.maximize_window()
     gc.get('https://portalcfdi.facturaelectronica.sat.gob.mx/')
+    log.info("== Opening browser ==")
 
     # Login
+    log.info("== Providing credentials manually ==")
     btn_e_firma = gc.find_element_by_id('buttonFiel').click()
     btn_cer = gc.find_element_by_id('btnCertificate').click()
     btn_key = gc.find_element_by_id('btnPrivateKey').click()
@@ -234,6 +210,7 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
         "//a[@href='https://pacsat.facturaelectronica.sat.gob.mx/Comprobante/CapturarComprobante']").click()
 
     # Selecting client
+    log.info("== Filling receptor data fields ==")
     client = Select(gc.find_element_by_name('Receptor.RfcCargado'))
     if company in ['SP', 'sp', 'seguros el potosi', 'Seguros el Potosi', 'Potosi', 'potosi']:
         client.select_by_value('SPO830427DQ1 SEGUROS EL POTOSI, S.A.')
@@ -250,13 +227,16 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
     next_tab = gc.find_element_by_xpath("//button[contains(@onclick,'clickTab')]").click()
 
     # Pay condition selection
+    log.info("== Selecting payment condition ==")
     if company in ['SP', 'sp', 'seguros el potosi', 'Seguros el Potosi', 'Potosi', 'potosi']:
         pay_condition = gc.find_element_by_id('CondicionesDePago').send_keys('Al contado')
     else:
         pay_condition = gc.find_element_by_id('CondicionesDePago').send_keys('En una sola exhibición')
 
+    # Concepts generation
     if damage != 0.0:
         # Damages Section
+        log.info("== Creating new concept for Damage data ==")
         new_concept = gc.find_element_by_id('btnMuestraConcepto').click()
         service = gc.find_element_by_id('ClaveProdServ').send_keys('80141600 Actividades de ventas y promoción de negocios')
         sleep(1)
@@ -269,28 +249,30 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
         gc.find_element_by_id('ValorUnitario').clear()
         gc.find_element_by_id('ValorUnitario').send_keys(str(damage))
 
-        # I.S.R.
+        log.info("== Filling taxes for Damage data ==")
         taxes_damage = gc.find_element_by_xpath("//a[contains(@onclick,'deshabilitaBotonAceptar')]").click()
-        sleep(1)
-        edit_isr = gc.find_element_by_xpath("//*[@id='tablaConRetenciones']/tbody/tr[1]/td[6]/span[1]").click()
-
-        # gc.find_element_by_id('Retenciones_Base').clear()
-        # base = gc.find_element_by_id('Retenciones_Base').send_keys(str(damage+life))
-
+        sleep(3)
+        # ISR
+        gc.find_element_by_xpath("/html/body/main/div[3]/section/form/div[2]/div/div/div[2]/div[3]/div/div[2]/div/div[1]/div/div/div/form/div[3]/div[2]/div[1]/div[1]/div/div/div/label[1]/input").click()
+        sleep(3)
         tax_type = Select(gc.find_element_by_xpath('//*[@id="Retenciones_Impuesto"]'))
         tax_type.select_by_value('001 ISR')
-
+        percentage = Select(gc.find_element_by_xpath('//*[@id="Retenciones_TipoFactor"]'))
+        percentage.select_by_value('Tasa')
         gc.find_element_by_id('Retenciones_TasaOCuota').clear()
-        percentage_isr = gc.find_element_by_id('Retenciones_TasaOCuota').send_keys(str(isr / damage))
+        percentage_isr = gc.find_element_by_id('Retenciones_TasaOCuota').send_keys("0.1")
         refresh_isr = gc.find_element_by_id('btnAgregaConImpuestoRetenido').click()
+        sleep(5)
 
         # Retained I.V.A.
-        edit_iva = gc.find_element_by_xpath("//*[@id='tablaConRetenciones']/tbody/tr[2]/td[6]/span[1]").click()
+        gc.find_element_by_xpath("/html/body/main/div[3]/section/form/div[2]/div/div/div[2]/div[3]/div/div[2]/div/div[1]/div/div/div/form/div[3]/div[2]/div[1]/div[1]/div/div/div/label[1]/input").click()
+        sleep(3)
         tax_type = Select(gc.find_element_by_xpath('//*[@id="Retenciones_Impuesto"]'))
         tax_type.select_by_value('002 IVA')
-
+        percentage = Select(gc.find_element_by_xpath('//*[@id="Retenciones_TipoFactor"]'))
+        percentage.select_by_value('Tasa')
         gc.find_element_by_id('Retenciones_TasaOCuota').clear()
-        percentage_iva = gc.find_element_by_id('Retenciones_TasaOCuota').send_keys(str(iva_ret / damage))
+        percentage_iva = gc.find_element_by_id('Retenciones_TasaOCuota').send_keys("0.106667")
         refresh_iva = gc.find_element_by_id('btnAgregaConImpuestoRetenido').click()
 
         # Finish edition of Damages Section
@@ -302,45 +284,40 @@ def automation_in_sat_webpage(company, date=None, damage=0.0, life=0.0, isr=0.0,
     else:
         log.error('There is no information in Damage Section.\nEvaluating Life Section')
 
-    if company in ['SP', 'sp', 'seguros el potosi', 'Seguros el Potosi', 'Potosi', 'potosi', 'A', 'a', 'Axa', 'axa']:
-        if life != 0.0:
-            # Life Section
-            gc.execute_script("scrollBy(0,-1000);")
-            sleep(1)
-            new_concept2 = gc.find_element_by_id('btnMuestraConcepto').click()
-            service2 = gc.find_element_by_id('ClaveProdServ').send_keys('80141601 Servicios de promoción de ventas')
-            sleep(1)
-            if company in ['A', 'a', 'Axa', 'axa']:
-                description = gc.find_element_by_id('Descripcion').send_keys(' ' + date + ' Agente 124109')
-            else:
-                description = gc.find_element_by_id('Descripcion').send_keys(' ' + date)
-            gc.find_element_by_id('ValorUnitario').clear()
-            gc.find_element_by_id('ValorUnitario').send_keys(str(life))
-
-            if damage == 0.0:
-                # I.S.R.
-                taxes_life = gc.find_element_by_xpath("//*[@id='tabsConcepto']/li[2]/a").click()
-                sleep(1)
-                edit_isr2 = gc.find_element_by_xpath("//*[@id='tablaConRetenciones']/tbody/tr/td[6]/span[1]").click()
-                gc.find_element_by_id('Retenciones_TasaOCuota').clear()
-                percentage_isr2 = gc.find_element_by_id('Retenciones_TasaOCuota').send_keys(str(isr / life))
-                refresh_isr2 = gc.find_element_by_id('btnAgregaConImpuestoRetenido').click()
-
-            else:
-                radio_btn_taxes = gc.find_element_by_xpath('//*[@id="AdicionalImpuestos"]')
-                radio_btn_taxes.click()
-
-            # Finish edition of Life Section
-            move_to_concept2 = gc.find_element_by_xpath("//a[@id='tabConceptosPrincipal']")
-            gc.execute_script("arguments[0].click();", move_to_concept2)
-            sleep(1)
-            add_concept2 = gc.find_element_by_xpath("//div[@id='tabConceptos']//button[@id='btnAceptarModal']").click()
-            sleep(3)
+    if life != 0.0:
+        # Life Section
+        gc.execute_script("scrollBy(0,-1000);")
+        sleep(1)
+        new_concept2 = gc.find_element_by_id('btnMuestraConcepto').click()
+        service2 = gc.find_element_by_id('ClaveProdServ').send_keys('80141601 Servicios de promoción de ventas')
+        sleep(1)
+        if company in ['A', 'a', 'Axa', 'axa']:
+            description = gc.find_element_by_id('Descripcion').send_keys(' ' + date + ' Agente 124109')
         else:
-            log.error('There is no information in Life Section.')
+            description = gc.find_element_by_id('Descripcion').send_keys(' ' + date)
+        gc.find_element_by_id('ValorUnitario').clear()
+        gc.find_element_by_id('ValorUnitario').send_keys(str(life))
+
+        # I.S.R.
+        log.info("== Filling taxes for Life data ==")
+        taxes_life = gc.find_element_by_xpath("//*[@id='tabsConcepto']/li[2]/a").click()
+        sleep(1)
+        edit_isr2 = gc.find_element_by_xpath("//*[@id='tablaConRetenciones']/tbody/tr/td[6]/span[1]").click()
+        gc.find_element_by_id('Retenciones_TasaOCuota').clear()
+        percentage_isr2 = gc.find_element_by_id('Retenciones_TasaOCuota').send_keys("0.100000")
+        refresh_isr2 = gc.find_element_by_id('btnAgregaConImpuestoRetenido').click()
+
+        # Finish edition of Life Section
+        move_to_concept2 = gc.find_element_by_xpath("//a[@id='tabConceptosPrincipal']")
+        gc.execute_script("arguments[0].click();", move_to_concept2)
+        sleep(1)
+        add_concept2 = gc.find_element_by_xpath("//div[@id='tabConceptos']//button[@id='btnAceptarModal']").click()
+        sleep(3)
+    else:
+        log.error('There is no information in Life Section.')
 
     # Verify total
-    log.info("---Verifying total amount---")
+    log.info("== Verifying total amount ==")
     sat_total = gc.find_element_by_xpath("//input[@id='Total']").get_attribute("value")
     upper_lim = float(sat_total) + 0.05
     lower_lim = float(sat_total) - 0.05

@@ -1,3 +1,5 @@
+chromedriver-binary==96.0.4664.18.0
+chromedriver-binary-auto==0.1.1
 PyPDF2==1.26.0
 python-decouple==3.4
 selenium==3.141.0
